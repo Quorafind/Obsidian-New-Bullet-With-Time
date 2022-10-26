@@ -1,10 +1,10 @@
 {
 	"id": "obsidian-new-bullet-with-time",
-	"name": "New Time Bullet",
+	"name": "New Bullet With Time",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "This is a sample plugin for Obsidian. This plugin demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
+	"description": "A plugin allows you to auto add current time to new bullet line.",
+	"author": "Boninall",
+	"authorUrl": "https://github.com/quorafind",
 	"isDesktopOnly": false
 }
