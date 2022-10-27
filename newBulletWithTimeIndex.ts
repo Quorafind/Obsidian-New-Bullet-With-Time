@@ -1,6 +1,6 @@
 import { App, Plugin, PluginSettingTab, Setting } from 'obsidian';
 import { EditorView, keymap } from "@codemirror/view";
-import { Prec } from "@codemirror/state";
+import { EditorState, Prec, Transaction, TransactionSpec } from "@codemirror/state";
 import { moment } from "obsidian";
 
 // Remember to rename these classes and interfaces!
@@ -24,16 +24,36 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new NewBulletWithTimeSettingTab(this.app, this));
 
-		this.registerEditorExtension(Prec.high(keymap.of([
-			{
-				key: "Enter",
-				run: (view: EditorView):boolean => {
-					setTimeout(() =>{
-						this.handleKeydown("Enter", view);
-					}, 0);
-					return false;
+		// This method doesn't work correctly because outliner catch the same keymap
+		// And while it is also the `highest`, it is impossible to run before it.
+		// But if there is a way to catch its behavior , this should be a good way.
+		// 	this.registerEditorExtension(Prec.highest(keymap.of([
+		// 		{
+		// 			key: "Enter",
+		// 			run: (view: EditorView):boolean => {
+		// 				setTimeout(() =>{
+		// 					this.handleKeydown("Enter", view);
+		// 				}, 0);
+		// 				return false;
+		// 			}
+		// 		}])));
+
+		// TODO Improve this.
+		// this.registerEditorExtension([
+		// 	EditorState.transactionFilter.of(this.handleTransaction.bind(this))
+		// ]);
+
+		// Though I set the highest for the domEventHandlers, it is still possible to trigger other commands.
+		this.registerEditorExtension(
+			Prec.highest(EditorView.domEventHandlers({
+				keydown: (e: KeyboardEvent, view: EditorView) => {
+					if (e.key === "Enter" && !e.shiftKey) {
+						setTimeout(() =>{
+							this.handleKeydown("Enter", view);
+						}, 0);
+					}
 				}
-			}])));
+			})));
 	}
 
 	onunload() {
@@ -47,6 +67,36 @@ export default class NewBulletWithTimePlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+
+	// TODO It is not a good way to change transaction directly, but use transactions should be the best way to do this.
+	// Need more study on how to use transactions.
+	// private readonly handleTransaction = (transaction: Transaction): Transaction => {
+	// 	// Ignore transactions which don't change the document
+	// 	if (!transaction.isUserEvent("input") || !transaction.docChanged) {
+	// 		return transaction;
+	// 	}
+	//
+	// 	console.log(transaction.annotation);
+	// 	const timeRegex = new RegExp("([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s" + this.settings.regexForTime);
+	//
+	// 	if(!(timeRegex.test(transaction.changes.inserted[1].text[0]))) return transaction;
+	//
+	// 	//
+	// 	// transaction = view.state.update({
+	// 	// 	changes: {
+	// 	// 		from: pos,
+	// 	// 		to: pos,
+	// 	// 		insert: toggledString
+	// 	// 	},
+	// 	// 	selection: {
+	// 	// 		anchor: pos + toggledString.length
+	// 	// 	}
+	// 	// })
+	//
+	// 	return transaction;
+	//
+	// }
 
 	private readonly checkMomentFormat = (dateString: string, format: string) => {
 		return moment(dateString, format, true).isValid()
