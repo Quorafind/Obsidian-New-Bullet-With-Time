@@ -98,7 +98,7 @@ export default class NewBulletWithTimePlugin extends Plugin {
 	//
 	// }
 
-	private readonly handleKeydownBeforeNewLine = (view: EditorView, e: MouseEvent): boolean => {
+	private readonly handleKeydownBeforeNewLine = (view: EditorView, e: KeyboardEvent): boolean => {
 
 		const s = view.state.selection;
 		const pos = s.main.to;
