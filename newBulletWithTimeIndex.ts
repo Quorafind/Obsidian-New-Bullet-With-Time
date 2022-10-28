@@ -27,14 +27,12 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		// This method doesn't work correctly because outliner catch the same keymap
 		// And while it is also the `highest`, it is impossible to run before it.
 		// But if there is a way to catch its behavior , this should be a good way.
-		// 	this.registerEditorExtension(Prec.highest(keymap.of([
+		// this.registerEditorExtension(Prec.highest(keymap.of([
 		// 		{
 		// 			key: "Enter",
 		// 			run: (view: EditorView):boolean => {
-		// 				setTimeout(() =>{
-		// 					this.handleKeydown("Enter", view);
-		// 				}, 0);
-		// 				return false;
+		// 				console.log("Hello");
+		// 				return this.handleKeydownBeforeNewLine(view);
 		// 			}
 		// 		}])));
 
@@ -48,9 +46,11 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			Prec.highest(EditorView.domEventHandlers({
 				keydown: (e: KeyboardEvent, view: EditorView) => {
 					if (e.key === "Enter" && !e.shiftKey) {
-						setTimeout(() =>{
-							this.handleKeydown("Enter", view);
-						}, 0);
+						if(!this.handleKeydownBeforeNewLine(view, e)) {
+							setTimeout(() =>{
+								this.handleKeydown(view);
+							}, 0);
+						}
 					}
 				}
 			})));
@@ -98,11 +98,38 @@ export default class NewBulletWithTimePlugin extends Plugin {
 	//
 	// }
 
-	private readonly checkMomentFormat = (dateString: string, format: string) => {
-		return moment(dateString, format, true).isValid()
+	private readonly handleKeydownBeforeNewLine = (view: EditorView, e: MouseEvent): boolean => {
+
+		const s = view.state.selection;
+		const pos = s.main.to;
+		const currentLine = view.state.doc.lineAt(pos);
+
+		const blankBulletRegex = new RegExp("([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s*$");
+		if(blankBulletRegex.test(currentLine.text)) return true;
+
+		const timeRegex = new RegExp("(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)" + this.settings.regexForTime + "(\\s*)$");
+		if(!(timeRegex.test(currentLine.text))) return false;
+
+		const matchText = currentLine.text.match(timeRegex);
+		if(matchText === null) return false;
+
+		e.stopPropagation();
+		e.preventDefault();
+
+		const toggledString = moment().format(this.settings.timeFormat) + matchText[5];
+		const transaction = view.state.update({
+			changes: {
+				from: pos - toggledString.length,
+				to: pos,
+				insert: ""
+			},
+		})
+		view.dispatch(transaction);
+
+		return true;
 	}
 
-	private readonly handleKeydown = (key: string, view: EditorView) => {
+	private readonly handleKeydown = (view: EditorView) => {
 
 		const s = view.state.selection;
 		const pos = s.main.to;
