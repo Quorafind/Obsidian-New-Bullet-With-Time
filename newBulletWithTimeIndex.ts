@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, Plugin, PluginSettingTab, Setting } from 'obsidian';
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState, Prec, Transaction, TransactionSpec } from "@codemirror/state";
 import { moment } from "obsidian";
@@ -54,6 +54,30 @@ export default class NewBulletWithTimePlugin extends Plugin {
 					}
 				}
 			})));
+
+		this.addCommand({
+			id: 'add-time-to-the-start',
+			name: 'Add time to the start',
+			hotkeys: [],
+			editorCallback: (editor) => {
+				// @ts-expect-error, not typed
+				const editorView = editor.cm as EditorView;
+
+				this.addTime(editor, editorView, "Start");
+			},
+		});
+
+		this.addCommand({
+			id: 'add-time-to-the-end',
+			name: 'Add time to the end',
+			hotkeys: [],
+			editorCallback: (editor, view) => {
+				// @ts-expect-error, not typed
+				const editorView = editor.cm as EditorView;
+
+				this.addTime(editor, editorView, "End");
+			},
+		});
 	}
 
 	onunload() {
@@ -66,6 +90,40 @@ export default class NewBulletWithTimePlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	addTime(editor: Editor, view: EditorView, position: string) {
+		const { state } = view;
+		const { from, to } = state.selection.main;
+		const line = state.doc.lineAt(from);
+		const text = state.doc.sliceString(line.from, line.to);
+
+		if(position === "Start") {
+
+			const bulletRegex = new RegExp("^\\s*(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)");
+			if(bulletRegex.test(text)) {
+				const matches = text.match(bulletRegex);
+				if(matches) {
+					editor.replaceRange(moment().format(this.settings.timeFormat) + " ", editor.offsetToPos(line.from + matches[0].length), editor.offsetToPos(line.from + matches[0].length));
+					return;
+				}
+			}
+
+			const headingRegex = new RegExp("^#{1,6}\\s");
+			if(headingRegex.test(text)) {
+				const matches = text.match(headingRegex);
+				if(matches) {
+					editor.replaceRange(moment().format(this.settings.timeFormat) + " ", editor.offsetToPos(line.from + matches[0].length), editor.offsetToPos(line.from + matches[0].length));
+					return;
+				}
+			}
+
+			editor.replaceRange(moment().format(this.settings.timeFormat) + " ", editor.offsetToPos(line.from), editor.offsetToPos(line.from));
+		} else if(position === "End") {
+			const timeString = " " + moment().format(this.settings.timeFormat);
+			editor.replaceRange(timeString, editor.offsetToPos(line.to), editor.offsetToPos(line.to));
+			editor.setCursor(editor.offsetToPos(line.to + timeString.length));
+		}
 	}
 
 
