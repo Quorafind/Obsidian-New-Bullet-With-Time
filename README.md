@@ -2,6 +2,17 @@
 
 A plugin allows you to auto add current time to new bullet line.
 
+```markdown
+you should have something like this(Bullet that begins with time):
+
+- 12:00 something | <-- (Enter here)
+
+get:
+
+- 12:00 something 
+- 12:01 (time)
+```
+
 ## Features
 
 You can set the default behavior in plugin settings.

@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-new-bullet-with-time",
-	"version": "1.1.3",
+	"version": "1.2.0",
 	"description": "A plugin allows you to auto add current time to new bullet line.",
 	"main": "main.js",
 	"scripts": {
