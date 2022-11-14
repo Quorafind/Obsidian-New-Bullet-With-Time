@@ -6,3 +6,28 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+
+.dbl-donate-button {
+	height: auto;
+	width: auto;
+	padding: 0;
+}
+
+.dbl-donate-button a {
+	height: 50px;
+	width: auto;
+	padding: 0;
+}
+
+svg.svg-icon.alipay {
+	height: 50px;
+	width: 50px;
+	padding: 0;
+}
+
+svg.svg-icon.wechat {
+	height: 50px;
+	width: 50px;
+	padding: 3px;
+}

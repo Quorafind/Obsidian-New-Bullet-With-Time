@@ -1,4 +1,4 @@
-import { App, Editor, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { addIcon, App, ButtonComponent, Editor, Plugin, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState, Prec, Transaction, TransactionSpec } from "@codemirror/state";
 import { moment } from "obsidian";
@@ -7,11 +7,15 @@ import { moment } from "obsidian";
 
 interface NewBulletWithTimePluginSettings {
 	timeFormat: string;
+	timePrefixFormat: string;
+	timeSuffixFormat: string;
 	regexForTime: string;
 }
 
 const DEFAULT_SETTINGS: NewBulletWithTimePluginSettings = {
 	timeFormat: 'HH:mm',
+	timePrefixFormat: '',
+	timeSuffixFormat: '',
 	regexForTime: '\\d{2}:\\d{2}'
 }
 
@@ -98,13 +102,15 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const line = state.doc.lineAt(from);
 		const text = state.doc.sliceString(line.from, line.to);
 
+		const timeStringAtBeginning = this.settings.timePrefixFormat + moment().format(this.settings.timeFormat) + this.settings.timeSuffixFormat;
+
 		if(position === "Start") {
 
 			const bulletRegex = new RegExp("^\\s*(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)");
 			if(bulletRegex.test(text)) {
 				const matches = text.match(bulletRegex);
 				if(matches) {
-					editor.replaceRange(moment().format(this.settings.timeFormat) + " ", editor.offsetToPos(line.from + matches[0].length), editor.offsetToPos(line.from + matches[0].length));
+					editor.replaceRange(timeStringAtBeginning + " ", editor.offsetToPos(line.from + matches[0].length), editor.offsetToPos(line.from + matches[0].length));
 					return;
 				}
 			}
@@ -113,12 +119,12 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			if(headingRegex.test(text)) {
 				const matches = text.match(headingRegex);
 				if(matches) {
-					editor.replaceRange(moment().format(this.settings.timeFormat) + " ", editor.offsetToPos(line.from + matches[0].length), editor.offsetToPos(line.from + matches[0].length));
+					editor.replaceRange(timeStringAtBeginning + " ", editor.offsetToPos(line.from + matches[0].length), editor.offsetToPos(line.from + matches[0].length));
 					return;
 				}
 			}
 
-			editor.replaceRange(moment().format(this.settings.timeFormat) + " ", editor.offsetToPos(line.from), editor.offsetToPos(line.from));
+			editor.replaceRange(timeStringAtBeginning + " ", editor.offsetToPos(line.from), editor.offsetToPos(line.from));
 		} else if(position === "End") {
 			const timeString = " " + moment().format(this.settings.timeFormat);
 			editor.replaceRange(timeString, editor.offsetToPos(line.to), editor.offsetToPos(line.to));
@@ -165,7 +171,10 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const blankBulletRegex = new RegExp("([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s*$");
 		if(blankBulletRegex.test(currentLine.text)) return true;
 
-		const timeRegex = new RegExp("(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)" + this.settings.regexForTime + "(\\s*)$");
+		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
+		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
+
+		const timeRegex = new RegExp("(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)" + prefixRegex +  this.settings.regexForTime + suffixRegex + "(\\s*)$");
 		if(!(timeRegex.test(currentLine.text))) return false;
 
 		const matchText = currentLine.text.match(timeRegex);
@@ -174,7 +183,7 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		e.stopPropagation();
 		e.preventDefault();
 
-		const toggledString = moment().format(this.settings.timeFormat) + matchText[5];
+		const toggledString = this.settings.timePrefixFormat + moment().format(this.settings.timeFormat) + this.settings.timeSuffixFormat + matchText[5];
 		const transaction = view.state.update({
 			changes: {
 				from: pos - toggledString.length,
@@ -194,10 +203,13 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const currentLine = view.state.doc.lineAt(pos);
 		const headingLine = view.state.doc.line(currentLine.number - 1);
 
-		const timeRegex = new RegExp("([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s" + this.settings.regexForTime);
+		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
+		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
+
+		const timeRegex = new RegExp("([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s" + prefixRegex + this.settings.regexForTime + suffixRegex);
 		if(!(timeRegex.test(headingLine.text))) return;
 
-		const toggledString = moment().format(this.settings.timeFormat) + " ";
+		const toggledString = this.settings.timePrefixFormat + moment().format(this.settings.timeFormat) + this.settings.timeSuffixFormat + " ";
 		const transaction = view.state.update({
 			changes: {
 				from: pos,
@@ -209,6 +221,16 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			}
 		})
 		view.dispatch(transaction);
+	}
+
+	escapeRegExp(text: string): string {
+		//eslint-disable-next-line
+		return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+	}
+
+	registerIconList() {
+		addIcon('alipay', `<svg t="1668133260947" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3767" width="100" height="100" fill="currentColor"><path d="M492.343 777.511c-67.093 32.018-144.129 51.939-227.552 32.27-83.424-19.678-142.626-73.023-132.453-171.512 10.192-98.496 115.478-132.461 202.07-132.461 86.622 0 250.938 56.122 250.938 56.122s13.807-30.937 27.222-66.307c13.405-35.365 17.21-63.785 17.21-63.785H279.869v-35.067h169.995v-67.087l-211.925 1.526v-44.218h211.925v-100.63h111.304v100.629H788.35v44.218l-227.181 1.524v62.511l187.584 1.526s-3.391 35.067-27.17 98.852c-23.755 63.783-46.061 96.312-46.061 96.312L960 685.279V243.2C960 144.231 879.769 64 780.8 64H243.2C144.231 64 64 144.231 64 243.2v537.6C64 879.769 144.231 960 243.2 960h537.6c82.487 0 151.773-55.806 172.624-131.668L625.21 672.744s-65.782 72.748-132.867 104.767z" p-id="3768"></path><path d="M297.978 559.871c-104.456 6.649-129.974 52.605-129.974 94.891s25.792 101.073 148.548 101.073c122.727 0 226.909-123.77 226.909-123.77s-141.057-78.842-245.483-72.194z" p-id="3769"></path></svg>`);
+		addIcon('wechat', `<svg t="1668133215423" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2768" width="100" height="100" fill="currentColor"><path d="M857.6 0H165.888C74.24 0 0 74.24 0 166.4v691.2c0 92.16 74.24 166.4 165.888 166.4h692.224c91.648 0 165.888-74.24 165.888-166.4v-691.2c-0.512-92.16-74.752-166.4-166.4-166.4zM384 686.08c-38.4 0-69.632-7.68-108.544-15.872l-108.544 54.272 31.232-93.184c-77.824-54.272-123.904-123.904-123.904-209.92 0-147.968 139.776-264.192 310.784-264.192 152.576 0 286.208 93.184 312.832 218.112-10.24-1.024-19.456-1.536-30.208-1.536-147.456 0-264.192 110.08-264.192 245.76 0 22.528 3.584 44.544 9.728 65.024-9.728 1.024-19.456 1.536-29.184 1.536z m457.728 108.544l23.04 77.824-84.992-46.592c-31.232 7.68-62.464 15.872-93.184 15.872-147.968 0-264.192-100.864-264.192-225.28 0-123.904 116.224-225.28 264.192-225.28 139.776 0 263.68 101.376 263.68 225.28 0.512 69.632-46.08 131.584-108.544 178.176z" p-id="2769"></path><path d="M237.568 323.072c0 12.288 5.12 24.064 13.312 32.768 8.704 8.704 20.48 13.312 32.768 13.312 12.288 0 24.064-5.12 32.768-13.312 8.704-8.704 13.312-20.992 13.312-32.768 0-12.288-5.12-24.064-13.312-32.768-8.704-8.704-20.992-13.312-32.768-13.312-12.288 0-24.064 5.12-32.768 13.312-8.704 8.704-13.312 20.992-13.312 32.768zM462.336 323.072c0 12.288 5.12 24.064 13.312 32.768s20.992 13.312 32.768 13.312c12.288 0 24.064-5.12 32.768-13.312 8.704-8.704 13.312-20.992 13.312-32.768 0-12.288-5.12-24.064-13.312-32.768-8.704-8.704-20.992-13.312-32.768-13.312-12.288 0-24.064 5.12-32.768 13.312-8.192 8.704-13.312 20.992-13.312 32.768zM574.464 547.328c0 9.216 3.584 18.432 10.752 25.088 6.656 6.144 15.872 10.24 25.088 10.24s18.432-3.584 25.088-10.24c6.656-6.144 10.752-15.872 10.752-25.088s-3.584-18.432-10.752-25.088c-6.656-6.144-15.872-10.24-25.088-10.24s-18.432 3.584-25.088 10.24c-6.656 6.656-10.752 15.872-10.752 25.088zM737.28 547.328c0 9.216 3.584 18.432 10.752 25.088 6.656 6.144 15.872 10.24 25.088 10.24s18.432-3.584 25.088-10.24c6.656-6.144 10.752-15.872 10.752-25.088s-3.584-18.432-10.752-25.088c-6.656-6.144-15.872-10.24-25.088-10.24s-18.432 3.584-25.088 10.24c-6.656 6.656-10.752 15.872-10.752 25.088z" p-id="2770"></path></svg>`)
 	}
 }
 
@@ -248,6 +270,28 @@ class NewBulletWithTimeSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
+			.setName('Prefix')
+			.setDesc('When insert time to bullet, this prefix would be added automatically.')
+			.addText(text => text
+				.setPlaceholder('Set your prefix')
+				.setValue(this.plugin.settings.timePrefixFormat)
+				.onChange(async (value) => {
+					this.plugin.settings.timePrefixFormat = value;
+					this.applySettingsUpdate();
+				}));
+
+		new Setting(containerEl)
+			.setName('Suffix')
+			.setDesc('When insert time to bullet, suffix would be added automatically.')
+			.addText(text => text
+				.setPlaceholder('Set your suffix')
+				.setValue(this.plugin.settings.timeSuffixFormat)
+				.onChange(async (value) => {
+					this.plugin.settings.timeSuffixFormat = value;
+					this.applySettingsUpdate();
+				}));
+
+		new Setting(containerEl)
 			.setName('Regex for Time format')
 			.setDesc('When you do not use HH:mm , you should change the regex here to make plugin works correctly.')
 			.addText(text => text
@@ -264,13 +308,37 @@ class NewBulletWithTimeSettingTab extends PluginSettingTab {
 			.setName('Donate')
 			.setDesc('If you like this plugin, consider donating to support continued development:')
 			.addButton((bt) => {
-				bt.buttonEl.outerHTML = `<a href="https://cdn.jsdelivr.net/gh/Quorafind/.github@main/IMAGE/%E5%BE%AE%E4%BF%A1%E4%BB%98%E6%AC%BE%E7%A0%81.jpg"><svg t="1665812123945" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6483" width="48" height="48"><path d="M664.250054 368.541681c10.015098 0 19.892049 0.732687 29.67281 1.795902-26.647917-122.810047-159.358451-214.077703-310.826188-214.077703-169.353083 0-308.085774 114.232694-308.085774 259.274068 0 83.708494 46.165436 152.460344 123.281791 205.78483l-30.80868 91.730191 107.688651-53.455469c38.558178 7.53665 69.459978 15.308661 107.924012 15.308661 9.66308 0 19.230993-0.470721 28.752858-1.225921-6.025227-20.36584-9.521864-41.723264-9.521864-63.862493C402.328693 476.632491 517.908058 368.541681 664.250054 368.541681zM498.62897 285.87389c23.200398 0 38.557154 15.120372 38.557154 38.061874 0 22.846334-15.356756 38.156018-38.557154 38.156018-23.107277 0-46.260603-15.309684-46.260603-38.156018C452.368366 300.994262 475.522716 285.87389 498.62897 285.87389zM283.016307 362.090758c-23.107277 0-46.402843-15.309684-46.402843-38.156018 0-22.941502 23.295566-38.061874 46.402843-38.061874 23.081695 0 38.46301 15.120372 38.46301 38.061874C321.479317 346.782098 306.098002 362.090758 283.016307 362.090758zM945.448458 606.151333c0-121.888048-123.258255-221.236753-261.683954-221.236753-146.57838 0-262.015505 99.348706-262.015505 221.236753 0 122.06508 115.437126 221.200938 262.015505 221.200938 30.66644 0 61.617359-7.609305 92.423993-15.262612l84.513836 45.786813-23.178909-76.17082C899.379213 735.776599 945.448458 674.90216 945.448458 606.151333zM598.803483 567.994292c-15.332197 0-30.807656-15.096836-30.807656-30.501688 0-15.190981 15.47546-30.477129 30.807656-30.477129 23.295566 0 38.558178 15.286148 38.558178 30.477129C637.361661 552.897456 622.099049 567.994292 598.803483 567.994292zM768.25071 567.994292c-15.213493 0-30.594809-15.096836-30.594809-30.501688 0-15.190981 15.381315-30.477129 30.594809-30.477129 23.107277 0 38.558178 15.286148 38.558178 30.477129C806.808888 552.897456 791.357987 567.994292 768.25071 567.994292z" p-id="6484" fill="#886ce4"></path></svg></a>`;
+				this.addImageToButton(bt, 'https://cdn.jsdelivr.net/gh/Quorafind/.github@main/IMAGE/%E5%BE%AE%E4%BF%A1%E4%BB%98%E6%AC%BE%E7%A0%81.jpg', 'wechat');
 			})
 			.addButton((bt) => {
-				bt.buttonEl.outerHTML = `<a href="https://cdn.jsdelivr.net/gh/Quorafind/.github@main/IMAGE/%E6%94%AF%E4%BB%98%E5%AE%9D%E4%BB%98%E6%AC%BE%E7%A0%81.jpg"><svg t="1665811211401" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5063" width="48" height="48"><path d="M1024.0512 701.0304V196.864A196.9664 196.9664 0 0 0 827.136 0H196.864A196.9664 196.9664 0 0 0 0 196.864v630.272A196.9152 196.9152 0 0 0 196.864 1024h630.272a197.12 197.12 0 0 0 193.8432-162.0992c-52.224-22.6304-278.528-120.32-396.4416-176.64-89.7024 108.6976-183.7056 173.9264-325.3248 173.9264s-236.1856-87.2448-224.8192-194.048c7.4752-70.0416 55.552-184.576 264.2944-164.9664 110.08 10.3424 160.4096 30.8736 250.1632 60.5184 23.1936-42.5984 42.496-89.4464 57.1392-139.264H248.064v-39.424h196.9152V311.1424H204.8V267.776h240.128V165.632s2.1504-15.9744 19.8144-15.9744h98.4576V267.776h256v43.4176h-256V381.952h208.8448a805.9904 805.9904 0 0 1-84.8384 212.6848c60.672 22.016 336.7936 106.3936 336.7936 106.3936zM283.5456 791.6032c-149.6576 0-173.312-94.464-165.376-133.9392 7.8336-39.3216 51.2-90.624 134.4-90.624 95.5904 0 181.248 24.4736 284.0576 74.5472-72.192 94.0032-160.9216 150.016-253.0816 150.016z" p-id="5064" fill="#886ce4"></path></svg></a>`;
+				this.addImageToButton(bt, 'https://cdn.jsdelivr.net/gh/Quorafind/.github@main/IMAGE/%E6%94%AF%E4%BB%98%E5%AE%9D%E4%BB%98%E6%AC%BE%E7%A0%81.jpg', 'alipay');
 			})
 			.addButton((bt) => {
-				bt.buttonEl.outerHTML = `<a href="https://www.buymeacoffee.com/boninall"><img src="https://img.buymeacoffee.com/button-api/?text=Coffee&emoji=&slug=boninall&button_colour=886ce4&font_colour=ffffff&font_family=Comic&outline_colour=000000&coffee_colour=FFDD00"></a>`;
+				this.addImageToButton(bt, "https://www.buymeacoffee.com/Quorafind", "bmc", "https://img.buymeacoffee.com/button-api/?text=Coffee&emoji=&slug=boninall&button_colour=886ce4&font_colour=ffffff&font_family=Comic&outline_colour=000000&coffee_colour=FFDD00");
 			});
+	}
+
+	addImageToButton(button: ButtonComponent, url: string, imageType: string, imageUrl?: string): void {
+		const aTagEL = button.buttonEl.createEl('a', {
+			href: url
+		})
+		button.buttonEl.addClass("dbl-donate-button");
+
+		switch (imageType) {
+			case "alipay":
+				setIcon(aTagEL, "alipay", 16);
+				break;
+			case "wechat":
+				setIcon(aTagEL, "wechat", 16);
+				break;
+			case "bmc":
+				const favicon = document.createElement("img") as HTMLImageElement;
+				if (imageUrl) favicon.src = imageUrl;
+				aTagEL.appendChild(favicon);
+				break;
+			default:
+				break;
+		}
+
 	}
 }
