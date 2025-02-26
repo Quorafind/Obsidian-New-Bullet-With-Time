@@ -219,6 +219,9 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
 		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
 
+		// Quote prefix pattern that matches both regular and nested quotes
+		const quotePrefix = "(?:^\\s*(?:>\\s*)+)?";
+
 		return {
 			// For detecting time anywhere in text
 			timeRegex: new RegExp(
@@ -228,10 +231,14 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			endTimeRegex: new RegExp(
 				prefixRegex + this.settings.regexForTime + suffixRegex + "\\s*$"
 			),
-			// For detecting bullets
-			bulletRegex: new RegExp("^\\s*(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)"),
-			// For detecting headings
-			headingRegex: new RegExp("^#{1,6}\\s"),
+			// For detecting bullets (including in quotes)
+			bulletRegex: new RegExp(
+				quotePrefix + "\\s*(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)"
+			),
+			// For detecting headings (including in quotes)
+			headingRegex: new RegExp(quotePrefix + "#{1,6}\\s"),
+			// For detecting quotes
+			quoteRegex: new RegExp("^\\s*(?:>\\s*)+"),
 		};
 	}
 
@@ -308,6 +315,13 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			return false;
 		}
 
+		// Check if we're in a quote
+		const timePatterns = this.createTimePatterns();
+		const quoteMatch = text.match(timePatterns.quoteRegex);
+		const quotePrefix = quoteMatch ? quoteMatch[0] : "";
+
+		// Calculate the position after the element (bullet or heading)
+		// If we're in a quote, we need to include the quote prefix
 		const afterElementText = text.substring(matches[0].length);
 		const timeMatch = afterElementText.match(timeRegex);
 		const insertPosition = line.from + matches[0].length;
@@ -351,23 +365,65 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		timeString: string,
 		timeRegex: RegExp
 	) {
-		const timeMatch = text.match(timeRegex);
+		// Check if we're in a quote
+		const timePatterns = this.createTimePatterns();
+		const quoteMatch = text.match(timePatterns.quoteRegex);
 
-		if (timeMatch && timeMatch.index === 0) {
-			// Update existing time
-			this.updateExistingTime(
-				editor,
-				line.from,
-				line.from + timeMatch[0].length,
-				timeString
+		if (quoteMatch) {
+			// We're in a quote, check if time exists after the quote prefix
+			const afterQuoteText = text.substring(quoteMatch[0].length);
+			const timeMatch = afterQuoteText.match(timeRegex);
+			const insertPosition = line.from + quoteMatch[0].length;
+
+			if (timeMatch && timeMatch.index === 0) {
+				// Update existing time
+				this.updateExistingTime(
+					editor,
+					insertPosition,
+					insertPosition + timeMatch[0].length,
+					timeString
+				);
+			} else {
+				// Add new time
+				this.insertNewTime(
+					editor,
+					insertPosition,
+					insertPosition,
+					timeString + " "
+				);
+			}
+
+			// Set cursor after time
+			editor.setCursor(
+				editor.offsetToPos(insertPosition + timeString.length + 1)
 			);
 		} else {
-			// Add new time
-			this.insertNewTime(editor, line.from, line.from, timeString + " ");
-		}
+			// Not in a quote, handle as before
+			const timeMatch = text.match(timeRegex);
 
-		// Set cursor after time
-		editor.setCursor(editor.offsetToPos(line.from + timeString.length + 1));
+			if (timeMatch && timeMatch.index === 0) {
+				// Update existing time
+				this.updateExistingTime(
+					editor,
+					line.from,
+					line.from + timeMatch[0].length,
+					timeString
+				);
+			} else {
+				// Add new time
+				this.insertNewTime(
+					editor,
+					line.from,
+					line.from,
+					timeString + " "
+				);
+			}
+
+			// Set cursor after time
+			editor.setCursor(
+				editor.offsetToPos(line.from + timeString.length + 1)
+			);
+		}
 	}
 
 	/**
@@ -528,16 +584,23 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const prevLine = state.doc.line(prevLineNumber);
 		const prevLineText = prevLine.text;
 
-		// Check if previous line is a bullet
-		const bulletRegex = new RegExp("^\\s*([-*+]|\\d+\\.)");
+		// Create patterns with quote support
+		const timePatterns = this.createTimePatterns();
 
+		// Check if previous line is a bullet (including in quotes)
 		// If it's not a bullet line at all, skip time insertion
-		if (!bulletRegex.test(prevLineText)) return true;
+		if (!timePatterns.bulletRegex.test(prevLineText)) return true;
 
-		// Check if previous line is a blank bullet
+		// Check if previous line is a blank bullet (including in quotes)
+		// Extract quote prefix if exists
+		const quoteMatch = prevLineText.match(timePatterns.quoteRegex);
+		const quotePrefix = quoteMatch ? quoteMatch[0] : "";
+
+		// Create regex for blank bullet that accounts for quotes
 		const blankBulletRegex = new RegExp(
-			"([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s*$"
+			quotePrefix + "\\s*([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s*$"
 		);
+
 		return blankBulletRegex.test(prevLineText);
 	}
 
@@ -555,12 +618,20 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const prevLine = state.doc.line(prevLineNumber);
 		const prevLineText = prevLine.text;
 
+		// Create patterns with quote support
+		const timePatterns = this.createTimePatterns();
+
+		// Extract quote prefix if exists
+		const quoteMatch = prevLineText.match(timePatterns.quoteRegex);
+		const quotePrefix = quoteMatch ? quoteMatch[0] : "";
+
 		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
 		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
 
-		// Check if the line only contains a bullet and timestamp
+		// Check if the line only contains a bullet and timestamp (including in quotes)
 		const bulletWithTimeRegex = new RegExp(
-			"^\\s*([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s+" +
+			quotePrefix +
+				"\\s*([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s+" +
 				prefixRegex +
 				this.settings.regexForTime +
 				suffixRegex +
@@ -586,16 +657,25 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const prevLine = state.doc.line(prevLineNumber);
 		const prevLineText = prevLine.text;
 
+		// Create patterns with quote support
+		const timePatterns = this.createTimePatterns();
+
+		// Extract quote prefix if exists
+		const quoteMatch = prevLineText.match(timePatterns.quoteRegex);
+		const quotePrefix = quoteMatch ? quoteMatch[0] : "";
+
 		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
 		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
 
-		// Check if previous line has a time format
+		// Check if previous line has a time format (including in quotes)
 		const timeRegex = new RegExp(
-			"([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s" +
+			quotePrefix +
+				"\\s*([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s" +
 				prefixRegex +
 				this.settings.regexForTime +
 				suffixRegex
 		);
+
 		if (!timeRegex.test(prevLineText)) return null;
 
 		// Get current time with timezone consideration
@@ -607,6 +687,10 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			currentTime.format(this.settings.timeFormat) +
 			this.settings.timeSuffixFormat +
 			" ";
+
+		// Check if the current line also starts with a quote
+		// If so, we don't need to add the quote prefix to the new line
+		// as it's already handled by Obsidian's default behavior
 
 		return {
 			changes: [
@@ -637,6 +721,12 @@ export default class NewBulletWithTimePlugin extends Plugin {
 		const prevLine = state.doc.line(prevLineNumber);
 		const prevLineText = prevLine.text;
 
+		// Create patterns with quote support
+		const timePatterns = this.createTimePatterns();
+
+		// Extract quote prefix if exists
+		const quoteMatch = prevLineText.match(timePatterns.quoteRegex);
+
 		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
 		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
 
@@ -645,11 +735,28 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			prefixRegex + this.settings.regexForTime + suffixRegex + "\\s*"
 		);
 
-		const match = prevLineText.match(timePattern);
-		if (!match) return null;
+		// If we're in a quote, we need to search after the quote prefix
+		let match;
+		let timeStartPos;
 
-		// Calculate positions for removal
-		const timeStartPos = prevLine.from + prevLineText.indexOf(match[0]);
+		if (quoteMatch) {
+			const afterQuoteText = prevLineText.substring(quoteMatch[0].length);
+			match = afterQuoteText.match(timePattern);
+
+			if (!match) return null;
+
+			timeStartPos =
+				prevLine.from +
+				quoteMatch[0].length +
+				afterQuoteText.indexOf(match[0]);
+		} else {
+			match = prevLineText.match(timePattern);
+
+			if (!match) return null;
+
+			timeStartPos = prevLine.from + prevLineText.indexOf(match[0]);
+		}
+
 		const timeEndPos = timeStartPos + match[0].length;
 
 		return {
