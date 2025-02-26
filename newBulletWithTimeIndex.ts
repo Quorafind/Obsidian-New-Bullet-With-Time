@@ -170,62 +170,269 @@ export default class NewBulletWithTimePlugin extends Plugin {
 
 	addTime(editor: Editor, view: EditorView, position: string) {
 		const { state } = view;
-		const { from, to } = state.selection.main;
+		const { from } = state.selection.main;
 		const line = state.doc.lineAt(from);
 		const text = state.doc.sliceString(line.from, line.to);
 
-		// Get current time with timezone consideration
-		const currentTime = this.getTimeWithTimezone();
+		// Get formatted time string
+		const timeString = this.getFormattedTimeString();
 
-		const timeStringAtBeginning =
-			this.settings.timePrefixFormat +
-			currentTime.format(this.settings.timeFormat) +
-			this.settings.timeSuffixFormat;
+		// Create regex patterns for time detection
+		const timePatterns = this.createTimePatterns();
 
+		// Handle based on position
 		if (position === "Start") {
-			const bulletRegex = new RegExp(
-				"^\\s*(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)"
-			);
-			if (bulletRegex.test(text)) {
-				const matches = text.match(bulletRegex);
-				if (matches) {
-					editor.replaceRange(
-						timeStringAtBeginning + " ",
-						editor.offsetToPos(line.from + matches[0].length),
-						editor.offsetToPos(line.from + matches[0].length)
-					);
-					return;
-				}
-			}
-
-			const headingRegex = new RegExp("^#{1,6}\\s");
-			if (headingRegex.test(text)) {
-				const matches = text.match(headingRegex);
-				if (matches) {
-					editor.replaceRange(
-						timeStringAtBeginning + " ",
-						editor.offsetToPos(line.from + matches[0].length),
-						editor.offsetToPos(line.from + matches[0].length)
-					);
-					return;
-				}
-			}
-
-			editor.replaceRange(
-				timeStringAtBeginning + " ",
-				editor.offsetToPos(line.from),
-				editor.offsetToPos(line.from)
+			this.handleStartPosition(
+				editor,
+				line,
+				text,
+				timeString,
+				timePatterns
 			);
 		} else if (position === "End") {
-			const timeString =
-				" " + currentTime.format(this.settings.timeFormat);
-			editor.replaceRange(
+			this.handleEndPosition(
+				editor,
+				line,
+				text,
 				timeString,
-				editor.offsetToPos(line.to),
-				editor.offsetToPos(line.to)
+				timePatterns
 			);
-			editor.setCursor(editor.offsetToPos(line.to + timeString.length));
 		}
+	}
+
+	/**
+	 * Get formatted time string with prefix and suffix
+	 */
+	private getFormattedTimeString(): string {
+		const currentTime = this.getTimeWithTimezone();
+		return (
+			this.settings.timePrefixFormat +
+			currentTime.format(this.settings.timeFormat) +
+			this.settings.timeSuffixFormat
+		);
+	}
+
+	/**
+	 * Create regex patterns for time detection
+	 */
+	private createTimePatterns() {
+		const prefixRegex = this.escapeRegExp(this.settings.timePrefixFormat);
+		const suffixRegex = this.escapeRegExp(this.settings.timeSuffixFormat);
+
+		return {
+			// For detecting time anywhere in text
+			timeRegex: new RegExp(
+				prefixRegex + this.settings.regexForTime + suffixRegex
+			),
+			// For detecting time at the end of text
+			endTimeRegex: new RegExp(
+				prefixRegex + this.settings.regexForTime + suffixRegex + "\\s*$"
+			),
+			// For detecting bullets
+			bulletRegex: new RegExp("^\\s*(([-*+]|\\d+\\.)(\\s\\[(.)\\])?\\s)"),
+			// For detecting headings
+			headingRegex: new RegExp("^#{1,6}\\s"),
+		};
+	}
+
+	/**
+	 * Handle adding/updating time at the start position
+	 */
+	private handleStartPosition(
+		editor: Editor,
+		line: { from: number; to: number },
+		text: string,
+		timeString: string,
+		patterns: {
+			timeRegex: RegExp;
+			bulletRegex: RegExp;
+			headingRegex: RegExp;
+		}
+	) {
+		// Try to handle as bullet
+		if (
+			this.handleMarkdownElement(
+				editor,
+				line,
+				text,
+				timeString,
+				patterns.bulletRegex,
+				patterns.timeRegex
+			)
+		) {
+			return;
+		}
+
+		// Try to handle as heading
+		if (
+			this.handleMarkdownElement(
+				editor,
+				line,
+				text,
+				timeString,
+				patterns.headingRegex,
+				patterns.timeRegex
+			)
+		) {
+			return;
+		}
+
+		// Handle as plain text (no bullet or heading)
+		this.handlePlainTextStart(
+			editor,
+			line,
+			text,
+			timeString,
+			patterns.timeRegex
+		);
+	}
+
+	/**
+	 * Handle adding/updating time at markdown element (bullet or heading)
+	 * Returns true if handled
+	 */
+	private handleMarkdownElement(
+		editor: Editor,
+		line: { from: number; to: number },
+		text: string,
+		timeString: string,
+		elementRegex: RegExp,
+		timeRegex: RegExp
+	): boolean {
+		if (!elementRegex.test(text)) {
+			return false;
+		}
+
+		const matches = text.match(elementRegex);
+		if (!matches) {
+			return false;
+		}
+
+		const afterElementText = text.substring(matches[0].length);
+		const timeMatch = afterElementText.match(timeRegex);
+		const insertPosition = line.from + matches[0].length;
+
+		if (timeMatch && timeMatch.index === 0) {
+			// Update existing time
+			this.updateExistingTime(
+				editor,
+				insertPosition,
+				insertPosition + timeMatch[0].length,
+				timeString
+			);
+
+			// Set cursor at end of line
+			editor.setCursor(editor.offsetToPos(line.to));
+		} else {
+			// Add new time
+			this.insertNewTime(
+				editor,
+				insertPosition,
+				insertPosition,
+				timeString + " "
+			);
+
+			// Set cursor after time
+			editor.setCursor(
+				editor.offsetToPos(insertPosition + timeString.length + 1)
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Handle adding/updating time at the start of plain text
+	 */
+	private handlePlainTextStart(
+		editor: Editor,
+		line: { from: number; to: number },
+		text: string,
+		timeString: string,
+		timeRegex: RegExp
+	) {
+		const timeMatch = text.match(timeRegex);
+
+		if (timeMatch && timeMatch.index === 0) {
+			// Update existing time
+			this.updateExistingTime(
+				editor,
+				line.from,
+				line.from + timeMatch[0].length,
+				timeString
+			);
+		} else {
+			// Add new time
+			this.insertNewTime(editor, line.from, line.from, timeString + " ");
+		}
+
+		// Set cursor after time
+		editor.setCursor(editor.offsetToPos(line.from + timeString.length + 1));
+	}
+
+	/**
+	 * Handle adding/updating time at the end position
+	 */
+	private handleEndPosition(
+		editor: Editor,
+		line: { from: number; to: number },
+		text: string,
+		timeString: string,
+		patterns: { endTimeRegex: RegExp }
+	) {
+		const endTimeMatch = text.match(patterns.endTimeRegex);
+
+		if (endTimeMatch) {
+			// Update existing time at end
+			const startPos = line.from + text.lastIndexOf(endTimeMatch[0]);
+			this.updateExistingTime(editor, startPos, line.to, timeString);
+		} else {
+			// Add new time at end
+			this.insertNewTime(editor, line.to, line.to, " " + timeString);
+		}
+
+		// Set cursor at end
+		editor.setCursor(editor.offsetToPos(line.to + timeString.length));
+	}
+
+	/**
+	 * Update existing time with new time string
+	 */
+	private updateExistingTime(
+		editor: Editor,
+		fromPos: number,
+		toPos: number,
+		timeString: string
+	) {
+		editor.transaction({
+			changes: [
+				{
+					text: timeString,
+					from: editor.offsetToPos(fromPos),
+					to: editor.offsetToPos(toPos),
+				},
+			],
+		});
+	}
+
+	/**
+	 * Insert new time string
+	 */
+	private insertNewTime(
+		editor: Editor,
+		fromPos: number,
+		toPos: number,
+		timeString: string
+	) {
+		editor.transaction({
+			changes: [
+				{
+					text: timeString,
+					from: editor.offsetToPos(fromPos),
+					to: editor.offsetToPos(toPos),
+				},
+			],
+		});
 	}
 
 	/**
