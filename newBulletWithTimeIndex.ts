@@ -26,6 +26,7 @@ interface NewBulletWithTimePluginSettings {
 	timeSuffixFormat: string;
 	regexForTime: string;
 	timeZone: string;
+	respectDaylightSavings: boolean;
 }
 
 const DEFAULT_SETTINGS: NewBulletWithTimePluginSettings = {
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: NewBulletWithTimePluginSettings = {
 	timeSuffixFormat: "",
 	regexForTime: "\\d{2}:\\d{2}",
 	timeZone: "local",
+	respectDaylightSavings: true,
 };
 
 // Timezone map with common timezones and their UTC offsets
@@ -500,27 +502,66 @@ export default class NewBulletWithTimePlugin extends Plugin {
 			return moment();
 		}
 
-		// For other timezones, we need to manually adjust the time
-		// Get the current UTC time
+		// For UTC, return the UTC time
+		if (this.settings.timeZone === "UTC") {
+			return moment().utc();
+		}
+
+		// For other timezones with daylight savings support
+		if (this.settings.respectDaylightSavings) {
+			// Create a date in the target timezone by computing the current UTC time
+			// and then applying the offset for the target timezone including DST
+			const now = new Date();
+
+			// Parse the named timezone from our timezone map
+			const timezone = this.settings.timeZone;
+			const targetDate = new Date(
+				now.toLocaleString("en-US", { timeZone: timezone })
+			);
+
+			// If browser doesn't support the timezone, fallback to offset method
+			if (isNaN(targetDate.getTime())) {
+				return this.getTimeByOffset();
+			}
+
+			// Create a moment object from the target date
+			return moment(targetDate);
+		}
+
+		// For timezones without daylight savings support
+		return this.getTimeByOffset();
+	}
+
+	/**
+	 * Get time by applying a fixed offset
+	 */
+	private getTimeByOffset() {
+		// Use UTC as the base
 		const now = moment().utc();
 
+		// Apply the fixed offset
+		return now.utcOffset(this.getTimezoneOffset(this.settings.timeZone));
+	}
+
+	/**
+	 * Get timezone offset in minutes from timezone string
+	 */
+	private getTimezoneOffset(timezone: string): number {
 		// Parse the UTC offset from the timezone map
-		const timezoneInfo = TIMEZONE_MAP[this.settings.timeZone] || "UTC+0";
+		const timezoneInfo = TIMEZONE_MAP[timezone] || "UTC+0";
 		const offsetMatch = timezoneInfo.match(/UTC([+-])(\d+)(?::(\d+))?/);
 
 		if (offsetMatch) {
 			const sign = offsetMatch[1] === "+" ? 1 : -1;
-			const hours = parseInt(offsetMatch[2], 10) * sign;
-			const minutes = offsetMatch[3]
-				? parseInt(offsetMatch[3], 10) * sign
-				: 0;
+			const hours = parseInt(offsetMatch[2], 10);
+			const minutes = offsetMatch[3] ? parseInt(offsetMatch[3], 10) : 0;
 
-			// Add the offset to the UTC time
-			return now.add(hours, "hours").add(minutes, "minutes");
+			// Return offset in minutes
+			return sign * (hours * 60 + minutes);
 		}
 
 		// Default to UTC if no match
-		return now;
+		return 0;
 	}
 
 	/**
@@ -890,6 +931,20 @@ class NewBulletWithTimeSettingTab extends PluginSettingTab {
 					this.applySettingsUpdate();
 				});
 			});
+
+		new Setting(containerEl)
+			.setName("Respect Daylight Savings")
+			.setDesc(
+				"Enable to adjust times for daylight savings changes when using named timezones."
+			)
+			.addToggle((toggle) => {
+				toggle.setValue(this.plugin.settings.respectDaylightSavings);
+				toggle.onChange(async (value) => {
+					this.plugin.settings.respectDaylightSavings = value;
+					this.applySettingsUpdate();
+				});
+			});
+
 		new Setting(containerEl)
 			.setName("Donate")
 			.setDesc(
